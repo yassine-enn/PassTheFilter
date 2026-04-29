@@ -269,6 +269,8 @@ def score_cv(cv_text: str, market: MarketProfile):
 #  INTERFACE STREAMLIT
 # ══════════════════════════════════════════════════════
 
+import math
+
 def score_color(s: float) -> str:
     if s >= 70: return SCORE_COLOR["excellent"]
     if s >= 50: return SCORE_COLOR["bon"]
@@ -281,160 +283,348 @@ def score_badge(s: float) -> str:
     if s >= 30: return "Faible"
     return "Insuffisant"
 
-def gauge_svg(score: float, size: int = 200) -> str:
-    """SVG gauge demi-cercle pour le score global."""
-    c = score_color(score)
-    r = 80
-    cx = size // 2
-    cy = size // 2 + 10
-    # Arc : 180° → la valeur de score
-    import math
-    angle = math.pi * (1 - score / 100)
-    x_end = cx + r * math.cos(angle)
-    y_end = cy - r * math.sin(angle)
-    # Fond gris
-    large_arc = 1  # toujours demi-cercle
-    path_bg = f"M {cx-r},{cy} A {r},{r} 0 0,1 {cx+r},{cy}"
-    path_fg = f"M {cx-r},{cy} A {r},{r} 0 0,1 {x_end:.1f},{y_end:.1f}"
-    return f"""
-<svg width="{size}" height="{size//2+30}" viewBox="0 0 {size} {size//2+30}" xmlns="http://www.w3.org/2000/svg">
-  <path d="{path_bg}" fill="none" stroke="#e5e7eb" stroke-width="18" stroke-linecap="round"/>
-  <path d="{path_fg}" fill="none" stroke="{c}" stroke-width="18" stroke-linecap="round"/>
-  <text x="{cx}" y="{cy+5}" text-anchor="middle" font-size="32" font-weight="700" fill="{c}">{score:.0f}</text>
-  <text x="{cx}" y="{cy+24}" text-anchor="middle" font-size="12" fill="#6b7280">/ 100</text>
-</svg>"""
+def score_badge_icon(s: float) -> str:
+    if s >= 70: return "🟢"
+    if s >= 50: return "🟡"
+    if s >= 30: return "🟠"
+    return "🔴"
 
-def horizontal_bar(score: float, height: int = 14) -> str:
+def gauge_svg(score: float, size: int = 240) -> str:
+        """SVG gauge demi-cercle raffiné : aiguille contrastée, ombre et indicateurs lisibles."""
+        c = score_color(score)
+        # taille et métriques
+        r = int(size * 0.36)
+        cx = size // 2
+        cy = int(size * 0.55)
+        stroke_w = max(12, int(size * 0.08))
+
+        # fonction utilitaire pour arc
+        def arc_path(start_pct, end_pct, radius):
+                a1 = math.pi * (1 - start_pct / 100)
+                a2 = math.pi * (1 - end_pct / 100)
+                x1 = cx + radius * math.cos(a1)
+                y1 = cy - radius * math.sin(a1)
+                x2 = cx + radius * math.cos(a2)
+                y2 = cy - radius * math.sin(a2)
+                large = 1 if abs(end_pct - start_pct) > 50 else 0
+                return f"M {x1:.2f},{y1:.2f} A {radius},{radius} 0 {large},1 {x2:.2f},{y2:.2f}"
+
+        zones = [
+                (0, 30, "#fb7185"),
+                (30, 50, "#fb923c"),
+                (50, 70, "#f59e0b"),
+                (70, 100, "#10b981"),
+        ]
+        zone_svgs = "\n".join(
+                f'<path d="{arc_path(s,e,r)}" fill="none" stroke="{col}" stroke-width="{stroke_w}" stroke-linecap="round" opacity="0.95"/>'
+                for s, e, col in zones
+        )
+
+        # arc de progression (plus épais, avec léger outline)
+        angle = math.pi * (1 - score / 100)
+        x_end = cx + r * math.cos(angle)
+        y_end = cy - r * math.sin(angle)
+        large_arc = 1 if score > 50 else 0
+        path_fg = f"M {cx-r:.2f},{cy} A {r},{r} 0 {large_arc},1 {x_end:.2f},{y_end:.2f}"
+
+        # ticks et labels
+        ticks_svg = ""
+        for t in [0, 25, 50, 75, 100]:
+                ta = math.pi * (1 - t / 100)
+                r_out = r + stroke_w/2 + 6
+                r_in = r - stroke_w/2 - 2
+                x1t = cx + r_out * math.cos(ta)
+                y1t = cy - r_out * math.sin(ta)
+                x2t = cx + r_in * math.cos(ta)
+                y2t = cy - r_in * math.sin(ta)
+                ticks_svg += f'<line x1="{x1t:.1f}" y1="{y1t:.1f}" x2="{x2t:.1f}" y2="{y2t:.1f}" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" opacity="0.9"/>'
+                # label
+                r_lbl = r_out + 14
+                xl = cx + r_lbl * math.cos(ta)
+                yl = cy - r_lbl * math.sin(ta)
+                ticks_svg += f'<text x="{xl:.1f}" y="{yl:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#6b7280">{t}</text>'
+
+        # aiguille stylée : outline + trait coloré + pointe
+        needle_len = r - 14
+        nx = cx + needle_len * math.cos(angle)
+        ny = cy - needle_len * math.sin(angle)
+
+        # centre
+        hub_r = max(8, int(size * 0.03))
+
+        h = int(size * 0.6)
+        return f"""
+<svg width="{size}" height="{h}" viewBox="0 0 {size} {h}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.12"/></filter>
+    </defs>
+    <!-- zones -->
+    {zone_svgs}
+
+    <!-- outline progression (subtle) -->
+    <path d="{path_fg}" fill="none" stroke="#0f172a22" stroke-width="{stroke_w+6}" stroke-linecap="round" opacity="0.18"/>
+    <!-- progression visible -->
+    <path d="{path_fg}" fill="none" stroke="{c}" stroke-width="{stroke_w}" stroke-linecap="round" filter="url(#glow)"/>
+
+    <!-- ticks -->
+    {ticks_svg}
+
+    <!-- aiguille outline (pour contraste) -->
+    <line x1="{cx}" y1="{cy}" x2="{nx:.2f}" y2="{ny:.2f}" stroke="#ffffff" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+    <!-- trait coloré au-dessus -->
+    <line x1="{cx}" y1="{cy}" x2="{nx:.2f}" y2="{ny:.2f}" stroke="{c}" stroke-width="4" stroke-linecap="round" filter="url(#shadow)"/>
+    <!-- pointe (petit triangle) -->
+    <polygon points="{nx:.2f},{ny:.2f} {nx+6*math.cos(angle+0.5):.2f},{ny-6*math.sin(angle+0.5):.2f} {nx+6*math.cos(angle-0.5):.2f},{ny-6*math.sin(angle-0.5):.2f}" fill="{c}" />
+
+    <!-- centre hub -->
+    <circle cx="{cx}" cy="{cy}" r="{hub_r+4}" fill="#ffffff" stroke="#e6eef7" stroke-width="2"/>
+    <circle cx="{cx}" cy="{cy}" r="{hub_r}" fill="{c}" />
+
+    <!-- score large -->
+    <text x="{cx}" y="{cy+28}" text-anchor="middle" font-size="28" font-weight="800" fill="#0f172a">{score:.0f}</text>
+    <text x="{cx}" y="{cy+46}" text-anchor="middle" font-size="11" fill="#6b7280">score / 100</text>
+</svg>
+"""
+
+def horizontal_bar(score: float, height: int = 10, show_label: bool = False) -> str:
     c = score_color(score)
+    label = f'<span style="font-size:11px;font-weight:600;color:{c};margin-left:6px">{score:.0f}%</span>' if show_label else ""
     return f"""
-<div style="background:#f3f4f6;border-radius:99px;height:{height}px;width:100%;overflow:hidden;">
-  <div style="background:{c};height:100%;width:{score:.1f}%;border-radius:99px;
-              transition:width .6s cubic-bezier(.4,0,.2,1);"></div>
+<div style="display:flex;align-items:center;gap:6px;">
+  <div style="flex:1;background:#f1f5f9;border-radius:99px;height:{height}px;overflow:hidden;">
+    <div style="background:linear-gradient(90deg,{c}bb,{c});height:100%;width:{score:.1f}%;border-radius:99px;
+                transition:width .8s cubic-bezier(.4,0,.2,1);"></div>
+  </div>
+  {label}
 </div>"""
 
 def keyword_chip(kw: str, freq: float | None = None, variant: str = "match") -> str:
     colors = {
-        "match":   ("background:#dcfce7;color:#166534;border:1px solid #86efac;", "✓ "),
-        "missing": ("background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;", "✗ "),
-        "top":     ("background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;", ""),
+        "match":   ("background:#dcfce7;color:#166534;border:1px solid #86efac;", "✓"),
+        "missing": ("background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;", "✗"),
+        "top":     ("background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;", "◆"),
     }
     style, prefix = colors.get(variant, colors["match"])
-    freq_txt = f" <span style='opacity:.6;font-size:10px'>({freq:.0f}%)</span>" if freq is not None else ""
+    freq_txt = f"&nbsp;<span style='opacity:.55;font-size:10px'>{freq:.0f}%</span>" if freq is not None else ""
     return (
-        f"<span style='display:inline-block;margin:2px 3px;padding:3px 9px;"
-        f"border-radius:99px;font-size:12px;font-weight:500;{style}'>"
-        f"{prefix}{kw}{freq_txt}</span>"
+        f"<span style='display:inline-flex;align-items:center;gap:3px;margin:2px 3px;"
+        f"padding:4px 10px;border-radius:99px;font-size:12px;font-weight:500;{style}'>"
+        f"<span style='font-size:10px'>{prefix}</span>&nbsp;{kw}{freq_txt}</span>"
     )
 
 
 def render_app():
     # ── Page config ──
     st.set_page_config(
-        page_title="ATS CV Scorer",
+        page_title="PassTheFilter — ATS CV Scorer",
         page_icon="🎯",
         layout="wide",
         initial_sidebar_state="collapsed",
     )
 
-    # ── CSS global ──
+    # ══════════════════════════════════════════════════════
+    #  CSS GLOBAL — design system professionnel
+    # ══════════════════════════════════════════════════════
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
-    html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
+    /* ─── Reset & Base ─── */
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    .stApp { background: #f0f4f8; }
+    footer, #MainMenu { visibility: hidden; }
 
-    .stApp { background: #f8fafc; }
-
+    /* ─── Hero Banner ─── */
     .hero {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f2847 100%);
-        border-radius: 20px;
-        padding: 40px 48px;
+        background: linear-gradient(135deg, #0f172a 0%, #1a2942 55%, #162035 100%);
+        border-radius: 22px;
+        padding: 44px 52px;
         margin-bottom: 28px;
         position: relative;
         overflow: hidden;
+        border: 1px solid rgba(255,255,255,.06);
     }
     .hero::before {
         content: '';
-        position: absolute;
-        top: -60px; right: -60px;
-        width: 260px; height: 260px;
-        background: radial-gradient(circle, rgba(59,130,246,.18) 0%, transparent 70%);
+        position: absolute; top: -80px; right: -80px;
+        width: 320px; height: 320px;
+        background: radial-gradient(circle, rgba(99,102,241,.22) 0%, transparent 65%);
         border-radius: 50%;
     }
-    .hero h1 { color: #f8fafc; font-size: 2.2rem; font-weight: 700; margin: 0 0 6px; letter-spacing: -.5px; }
-    .hero p  { color: #94a3b8; font-size: 1.05rem; margin: 0; }
-    .hero .badge {
-        display: inline-block; background: rgba(59,130,246,.2); color: #93c5fd;
-        border: 1px solid rgba(59,130,246,.3); border-radius: 99px;
-        padding: 4px 14px; font-size: 13px; font-weight: 500; margin-bottom: 16px;
+    .hero::after {
+        content: '';
+        position: absolute; bottom: -60px; left: 30%;
+        width: 200px; height: 200px;
+        background: radial-gradient(circle, rgba(16,185,129,.12) 0%, transparent 65%);
+        border-radius: 50%;
     }
+    .hero-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: rgba(99,102,241,.18); color: #a5b4fc;
+        border: 1px solid rgba(99,102,241,.35); border-radius: 99px;
+        padding: 5px 16px; font-size: 12px; font-weight: 600;
+        letter-spacing: .5px; text-transform: uppercase;
+        margin-bottom: 18px;
+    }
+    .logo-circle {
+        width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#4f46e5);display:inline-flex;align-items:center;justify-content:center;color:white;font-weight:800;margin-right:12px;box-shadow:0 6px 18px rgba(99,102,241,.18);
+    }
+    .hero-row { display:flex;align-items:center;gap:12px;margin-bottom:12px }
+    .status-badge { font-size:12px;padding:6px 10px;border-radius:999px;background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff;margin-left:8px }
+    .hero h1 {
+        color: #f8fafc; font-size: 2.4rem; font-weight: 800;
+        margin: 0 0 10px; letter-spacing: -.8px; line-height: 1.1;
+    }
+    .hero h1 span { color: #818cf8; }
+    .hero p { color: #94a3b8; font-size: 1rem; margin: 0; line-height: 1.65; max-width: 600px; }
+    .hero-stats {
+        display: flex; gap: 32px; margin-top: 26px;
+    }
+    .hero-stat-item { display: flex; flex-direction: column; }
+    .hero-stat-val { color: #f8fafc; font-size: 1.5rem; font-weight: 700; }
+    .hero-stat-lbl { color: #64748b; font-size: 12px; font-weight: 500; }
 
+    /* ─── Cards ─── */
     .card {
-        background: white;
-        border-radius: 16px;
-        padding: 24px 28px;
-        box-shadow: 0 1px 4px rgba(0,0,0,.06);
+        background: #ffffff;
+        border-radius: 18px;
+        padding: 26px 30px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.07), 0 4px 16px rgba(0,0,0,.04);
         margin-bottom: 20px;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #e8edf3;
     }
     .card-title {
-        font-size: 14px; font-weight: 600; color: #64748b;
-        text-transform: uppercase; letter-spacing: .8px;
-        margin-bottom: 16px;
+        font-size: 11px; font-weight: 700; color: #94a3b8;
+        text-transform: uppercase; letter-spacing: 1px;
+        margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
+    }
+    .card-title::after {
+        content: ''; flex: 1; height: 1px; background: #f1f5f9;
     }
 
-    .metric-row { display: flex; gap: 16px; margin-bottom: 20px; }
-    .metric-box {
-        flex: 1; background: white; border-radius: 14px;
-        padding: 18px 20px; border: 1px solid #e2e8f0;
-        box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    /* ─── Score Global Card ─── */
+    .score-global-wrap {
+        display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
     }
-    .metric-label { font-size: 12px; color: #94a3b8; font-weight: 500; margin-bottom: 4px; }
-    .metric-value { font-size: 1.4rem; font-weight: 700; color: #0f172a; }
-    .metric-sub   { font-size: 12px; color: #64748b; margin-top: 2px; }
-
-    .rec-card {
-        background: #f0fdf4; border: 1px solid #86efac;
-        border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;
-        font-size: 14px; color: #14532d; line-height: 1.5;
+    .score-gauge-col { flex-shrink: 0; }
+    .score-info-col { flex: 1; min-width: 180px; }
+    .score-number {
+        font-size: 3.2rem; font-weight: 800; line-height: 1;
+        letter-spacing: -2px; margin-bottom: 6px;
     }
-    .rec-card.warn  { background:#fff7ed; border-color:#fdba74; color:#7c2d12; }
-    .rec-card.error { background:#fef2f2; border-color:#fca5a5; color:#7f1d1d; }
-    .rec-card.info  { background:#eff6ff; border-color:#93c5fd; color:#1e3a8a; }
+    .score-number sub { font-size: 1.1rem; color: #94a3b8; font-weight: 500; letter-spacing: 0; }
+    .score-pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        border-radius: 99px; padding: 5px 16px;
+        font-size: 13px; font-weight: 600; margin-bottom: 18px;
+    }
+    .score-meta { font-size: 13.5px; color: #475569; line-height: 1.8; }
+    .score-meta strong { color: #1e293b; }
+    .score-divider { width: 1px; height: 60px; background: #e8edf3; flex-shrink: 0; }
 
-    .top-kw-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-    .top-kw-name { font-size: 14px; font-weight: 500; color: #1e293b; width: 140px; flex-shrink: 0; }
-    .top-kw-bar  { flex: 1; }
-    .top-kw-pct  { font-size: 13px; color: #64748b; width: 44px; text-align: right; flex-shrink: 0; }
+    /* ─── Category Grid ─── */
+    .cat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+    }
+    .cat-card {
+        background: #ffffff;
+        border: 1px solid rgba(15,23,42,0.06);
+        border-radius: 12px;
+        padding: 18px;
+        transition: transform .12s ease, box-shadow .12s ease, border-color .12s;
+        cursor: default;
+        box-shadow: 0 6px 18px rgba(16,24,40,0.04);
+    }
+    .cat-card:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(16,24,40,0.06); border-color: #c7d2fe; }
+    .cat-card.weak { border-color: rgba(239,68,68,0.22); }
+    .cat-card.strong { border-color: rgba(34,197,94,0.18); }
+    .cat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; }
+    .cat-label { font-size: 14px; font-weight: 700; color: #0f172a; display:flex; align-items:center; gap:8px; }
+    .cat-score-badge {
+        font-size: 12px; font-weight: 700; padding: 6px 10px;
+        border-radius: 999px; font-family: 'JetBrains Mono', monospace;
+        min-width:56px; text-align:center; border:1px solid rgba(0,0,0,0.04);
+        background: rgba(0,0,0,0.02);
+    }
+    .cat-bar-wrap { margin-bottom: 10px; }
+    .cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
+    /* ─── Metrics ─── */
+    .metrics-strip {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;
+    }
+    .metric-tile {
+        background: #f8fafc; border: 1px solid #e2e8f0;
+        border-radius: 14px; padding: 16px 18px;
+    }
+    .metric-icon { font-size: 18px; margin-bottom: 6px; }
+    .metric-label { font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+    .metric-value { font-size: 1.5rem; font-weight: 800; color: #0f172a; line-height: 1.1; margin: 4px 0 2px; }
+    .metric-sub { font-size: 11px; color: #94a3b8; }
+
+    /* ─── Top Keywords ─── */
+    .kw-row {
+        display: grid; grid-template-columns: 120px 1fr 42px;
+        align-items: center; gap: 12px; margin-bottom: 9px;
+    }
+    .kw-name {
+        font-size: 13px; font-weight: 500; color: #1e293b;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .kw-pct { font-size: 12px; font-weight: 600; color: #64748b; text-align: right; font-family: 'JetBrains Mono', monospace; }
+
+    /* ─── Recommendations ─── */
+    .rec-list { display: flex; flex-direction: column; gap: 10px; }
+    .rec-item {
+        display: flex; gap: 14px; align-items: flex-start;
+        border-radius: 14px; padding: 16px 18px;
+        border: 1px solid transparent;
+    }
+    .rec-item.success { background: #f0fdf4; border-color: #86efac; }
+    .rec-item.warning { background: #fffbeb; border-color: #fcd34d; }
+    .rec-item.danger  { background: #fff1f2; border-color: #fda4af; }
+    .rec-item.info    { background: #eff6ff; border-color: #93c5fd; }
+    .rec-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .rec-body { flex: 1; }
+    .rec-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
+    .rec-desc  { font-size: 13px; color: #475569; line-height: 1.55; }
+    .rec-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; }
+
+    /* ─── Progress bar ─── */
+    .pbar-outer {
+        background: #f1f5f9; border-radius: 99px; overflow: hidden;
+    }
+
+    /* ─── Upload zone ─── */
     div[data-testid="stFileUploader"] {
-        background: white; border-radius: 16px;
+        background: #f8fafc; border-radius: 14px;
         border: 2px dashed #cbd5e1 !important;
-        padding: 12px;
     }
-    div[data-testid="stFileUploader"]:hover { border-color: #3b82f6 !important; }
+    div[data-testid="stFileUploader"]:hover { border-color: #6366f1 !important; }
 
+    /* ─── Button ─── */
     .stButton > button {
-        background: #2563eb; color: white; border: none;
-        border-radius: 10px; padding: 10px 28px;
-        font-weight: 600; font-size: 15px;
-        transition: background .2s;
+        background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
+        color: white !important; border: none !important;
+        border-radius: 12px !important; padding: 12px 28px !important;
+        font-weight: 700 !important; font-size: 15px !important;
+        box-shadow: 0 4px 14px rgba(99,102,241,.35) !important;
+        transition: all .2s !important;
     }
-    .stButton > button:hover { background: #1d4ed8; }
+    .stButton > button:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 20px rgba(99,102,241,.45) !important;
+    }
 
-    footer { visibility: hidden; }
-    #MainMenu { visibility: hidden; }
+    .analyze-primary { width:100%; max-width:360px; margin:0 auto; display:block; }
+    .analyze-primary.reanalyse { background: linear-gradient(90deg,#10b981,#059669) !important; }
+
+    /* ─── Radio ─── */
+    .stRadio [role="radiogroup"] { gap: 8px !important; }
     </style>
-    """, unsafe_allow_html=True)
-
-    # ── Hero ──
-    st.markdown("""
-    <div class="hero">
-        <div class="badge">🎯 Simulateur ATS</div>
-        <h1>CV Scorer Data</h1>
-        <p>Analysez l'alignement de votre CV avec 487 offres d'emploi Data en France.<br>
-        Identifiez les keywords manquants, simulez la lecture ATS, optimisez vos candidatures.</p>
-    </div>
     """, unsafe_allow_html=True)
 
     # ── Chargement du profil marché ──
@@ -447,205 +637,335 @@ def render_app():
             st.info("Vérifiez que les fichiers JSON et la DB sont dans le même dossier que app.py")
             return
 
-    # ── Layout principal ──
-    col_left, col_right = st.columns([1, 1.6], gap="large")
+    dom_contract = max(market.contract_dist, key=market.contract_dist.get)
 
+    # ══════════════════════════════════════════════════════
+    #  HERO BANNER
+    # ══════════════════════════════════════════════════════
+    # Hero compact avec logo et tagline plus pro
+    analyze_label = "Réanalyser" if st.session_state.get("analyse_cv") else "Analyser mon CV"
+    st.markdown(f"""
+    <div class="hero" style="padding: 18px 28px 16px 28px; min-height:unset;">
+        <div class="hero-row">
+            <div class="logo-circle">PTF</div>
+            <div style="flex:1">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <div style="font-size:20px;font-weight:800;color:#f8fafc">Pass<span style='color:#818cf8'>The</span>Filter</div>
+                </div>
+                <div style="font-size:13px;color:#c7d2fe;margin-top:6px">Évaluez votre CV vs. le marché Data français — recommandations actionnables en quelques secondes.</div>
+            </div>
+        </div>
+        <div class="hero-stats" style="gap:14px;margin-top:14px;">
+            <div class="hero-stat-item"><span class="hero-stat-val">{market.total_offers}</span><span class="hero-stat-lbl">Offres</span></div>
+            <div class="hero-stat-item"><span class="hero-stat-val">7</span><span class="hero-stat-lbl">Catégories</span></div>
+            <div class="hero-stat-item"><span class="hero-stat-val">{dom_contract}</span><span class="hero-stat-lbl">Contrat</span></div>
+            <div class="hero-stat-item"><span class="hero-stat-val">{market.top_keywords[0][0].upper() if market.top_keywords else 'PY'}</span><span class="hero-stat-lbl">Top skill</span></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════
+    #  LAYOUT PRINCIPAL  ──  gauche / droite
+    # ══════════════════════════════════════════════════════
+    col_left, col_right = st.columns([1, 1.7], gap="large")
+
+    # ──────────────────────────────────────────────────────
+    #  PANNEAU GAUCHE
+    # ──────────────────────────────────────────────────────
     with col_left:
+        # ── Uploader CV ──
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">📄 Votre CV</div>', unsafe_allow_html=True)
-
         upload_mode = st.radio(
-            "Source", ["📎 Fichier (PDF / DOCX / TXT)", "✏️  Texte libre"],
-            horizontal=True, label_visibility="collapsed"
+            "Source", ["📎  Fichier (PDF / DOCX / TXT)", "✏️  Texte libre"],
+            horizontal=True, label_visibility="collapsed",
         )
-
         cv_text = ""
-
+        uploaded = None
         if "📎" in upload_mode:
             uploaded = st.file_uploader(
                 "Glissez votre CV ici",
                 type=["pdf", "docx", "doc", "txt", "md"],
                 label_visibility="collapsed",
+                key="cv_uploader",
             )
             if uploaded:
                 with st.spinner("Extraction du texte…"):
                     cv_text = parse_uploaded_file(uploaded)
                 if cv_text.strip():
-                    st.success(f"✓ {len(cv_text.split())} mots extraits depuis **{uploaded.name}**")
-                    with st.expander("Aperçu du texte extrait"):
-                        st.text(cv_text[:2000] + ("…" if len(cv_text) > 2000 else ""))
+                    nb_words = len(cv_text.split())
+                    st.success(f"✓ **{nb_words}** mots extraits depuis **{uploaded.name}**")
+                    with st.expander("🔍 Aperçu du texte extrait"):
+                        st.code(cv_text[:2000] + ("…" if len(cv_text) > 2000 else ""), language=None)
                 else:
                     st.warning("Aucun texte extrait. Essayez le mode Texte libre.")
         else:
             cv_text = st.text_area(
                 "Collez le contenu de votre CV",
-                height=320,
+                height=300,
                 placeholder="Formation, expériences, compétences techniques, soft skills…",
                 label_visibility="collapsed",
+                key="cv_text_area",
             )
+
+        # --- Bande bouton Analyser mon CV (Streamlit button placé sous l'uploader) ---
+        btn_label = "Réanalyser" if st.session_state.get("analyse_cv") else "🚀  Analyser mon CV"
+        analyse_clicked = st.button(btn_label, use_container_width=True, key="analyze_btn")
+        if analyse_clicked:
+            # Récupérer le texte source (upload ou textarea)
+            source_text = ""
+            if "📎" in upload_mode:
+                up = st.session_state.get("cv_uploader")
+                if up is not None:
+                    # quand le fichier est ré-uploade, parse_uploaded_file doit être appelé
+                    try:
+                        source_text = parse_uploaded_file(up)
+                    except Exception:
+                        source_text = ""
+            else:
+                source_text = st.session_state.get("cv_text_area", "")
+
+            if source_text and source_text.strip():
+                with st.spinner("Scoring ATS en cours…"):
+                    res = score_cv(source_text, market)
+                    st.session_state["result"] = res
+                    st.session_state["analyse_cv"] = True
+                    st.session_state["last_run_ts"] = __import__('time').time()
+            else:
+                st.warning("Aucun texte de CV détecté. Téléversez un fichier ou collez le texte avant d'analyser.")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Métriques marché
+        # --- Reset de l'état d'analyse si l'utilisateur change l'input ---
+        # Pour les fichiers, on compare le nom du fichier précédent
+        if "cv_uploader" in st.session_state:
+            up = st.session_state.get("cv_uploader")
+            up_name = up.name if up is not None and hasattr(up, 'name') else None
+            if st.session_state.get("last_uploaded_name") != up_name:
+                st.session_state["analyse_cv"] = False
+                st.session_state.pop("result", None)
+                st.session_state["last_uploaded_name"] = up_name
+
+        # Pour le texte, on compare un snapshot (début du texte)
+        if "cv_text_area" in st.session_state:
+            text_snap = (st.session_state.get("cv_text_area") or "")[:200]
+            if st.session_state.get("last_text_snapshot") != text_snap:
+                st.session_state["analyse_cv"] = False
+                st.session_state.pop("result", None)
+                st.session_state["last_text_snapshot"] = text_snap
+
+        # ── Métriques marché ──
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title">📈 Base de référence</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">📈 Profil du marché</div>', unsafe_allow_html=True)
+
+        dom_edu = max(market.education_dist, key=market.education_dist.get)
+        dom_edu_pct = market.education_dist.get(dom_edu, 0) * 100
+        dom_ct_pct  = market.contract_dist.get(dom_contract, 0) * 100
+
         st.markdown(f"""
-        <div class="metric-row">
-          <div class="metric-box">
-            <div class="metric-label">Offres analysées</div>
+        <div class="metrics-strip">
+          <div class="metric-tile">
+            <div class="metric-icon">📋</div>
+            <div class="metric-label">Offres</div>
             <div class="metric-value">{market.total_offers}</div>
-            <div class="metric-sub">WTTJ · Meteojob · Hellowork</div>
+            <div class="metric-sub">WTTJ · Meteojob · HW</div>
           </div>
-          <div class="metric-box">
-            <div class="metric-label">Contrat dominant</div>
-            <div class="metric-value">{max(market.contract_dist, key=market.contract_dist.get)}</div>
-            <div class="metric-sub">{market.contract_dist.get(max(market.contract_dist, key=market.contract_dist.get), 0)*100:.0f}% des offres</div>
+          <div class="metric-tile">
+            <div class="metric-icon">📝</div>
+            <div class="metric-label">Contrat top</div>
+            <div class="metric-value">{dom_contract}</div>
+            <div class="metric-sub">{dom_ct_pct:.0f}% des offres</div>
+          </div>
+          <div class="metric-tile">
+            <div class="metric-icon">🎓</div>
+            <div class="metric-label">Formation top</div>
+            <div class="metric-value">{dom_edu}</div>
+            <div class="metric-sub">{dom_edu_pct:.0f}% des offres</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # Top 10 keywords marché
-        st.markdown('<div class="card-title" style="margin-top:8px">🔑 Top keywords du marché</div>', unsafe_allow_html=True)
-        for kw, freq in market.top_keywords[:10]:
+        # ── Top 12 keywords ──
+        st.markdown('<div class="card-title" style="margin-top:4px">🔑 Top keywords du marché</div>', unsafe_allow_html=True)
+        max_freq = market.top_keywords[0][1] if market.top_keywords else 1
+        for kw, freq in market.top_keywords[:12]:
+            pct = freq * 100
+            bar_pct = (freq / max_freq) * 100
+            c_bar = score_color(pct)
             st.markdown(f"""
-            <div class="top-kw-row">
-              <span class="top-kw-name">{kw}</span>
-              <div class="top-kw-bar">{horizontal_bar(freq*100, 10)}</div>
-              <span class="top-kw-pct">{freq*100:.0f}%</span>
+            <div class="kw-row">
+              <span class="kw-name">{kw}</span>
+              <div class="pbar-outer" style="height:8px;">
+                <div style="background:linear-gradient(90deg,{c_bar}88,{c_bar});
+                            height:100%;width:{bar_pct:.1f}%;border-radius:99px;"></div>
+              </div>
+              <span class="kw-pct">{pct:.0f}%</span>
             </div>""", unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # ──────────────────────────────────────────────────────
+    #  PANNEAU DROIT
+    # ──────────────────────────────────────────────────────
     with col_right:
-        scored = False
-        result = None
+        # Initialisation
+        if 'analyse_cv' not in st.session_state:
+            st.session_state['analyse_cv'] = False
 
-        if cv_text.strip():
-            if st.button("🚀  Analyser mon CV", use_container_width=True):
-                with st.spinner("Scoring en cours…"):
-                    result = score_cv(cv_text, market)
-                    st.session_state["result"] = result
-            elif "result" in st.session_state:
-                result = st.session_state["result"]
+        result = st.session_state.get('result') if st.session_state.get('analyse_cv') else None
 
         if result:
-            # ── Score global ──
             overall = result["overall"]
-            c = score_color(overall)
+            c_main = score_color(overall)
             badge = score_badge(overall)
+            b_icon = score_badge_icon(overall)
 
+            # SCORE GLOBAL
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.markdown('<div class="card-title">🎯 Score Global ATS</div>', unsafe_allow_html=True)
 
-            gcol1, gcol2 = st.columns([1, 1.4])
-            with gcol1:
-                st.markdown(gauge_svg(overall, 220), unsafe_allow_html=True)
-            with gcol2:
+            g_col1, g_col2 = st.columns([1, 1.3], gap="medium")
+            with g_col1:
+                try:
+                    import streamlit.components.v1 as components
+                    svg_html = gauge_svg(overall, 240)
+                    # height computed from SVG internal h variable in gauge_svg
+                    components.html(svg_html, height=int(240 * 0.62))
+                except Exception:
+                    st.markdown(gauge_svg(overall, 240), unsafe_allow_html=True)
+            with g_col2:
                 st.markdown(f"""
-                <div style="padding-top:20px">
-                  <div style="font-size:2.4rem;font-weight:800;color:{c}">{overall:.1f}<span style="font-size:1.2rem;color:#94a3b8">/100</span></div>
-                  <div style="display:inline-block;background:{c}22;color:{c};border:1px solid {c}55;
-                       border-radius:99px;padding:4px 14px;font-size:13px;font-weight:600;margin-bottom:14px">{badge}</div>
-                  <div style="font-size:14px;color:#475569;line-height:1.6">
-                    <b>Formation :</b> {result['cv_edu']}<br>
-                    <b>Marché :</b> {result['dominant_edu']} dominant<br>
-                    <b>Cibles :</b> {', '.join(result['contract_targets']) or 'N/A'}
+                <div style="padding-top:14px;">
+                  <div class="score-number" style="color:{c_main}">{overall:.1f}<sub>/100</sub></div>
+                  <div class="score-pill" style="background:{c_main}18;color:{c_main};border:1.5px solid {c_main}44;">{b_icon} {badge}</div>
+                  <div class="score-meta">
+                    <strong>🎓 Formation détectée :</strong> {result['cv_edu']}<br>
+                    <strong>📊 Marché :</strong> {result['dominant_edu']} dominant<br>
+                    <strong>🎯 Types de contrat :</strong> {', '.join(result['contract_targets']) or 'N/A'}
                   </div>
                 </div>
                 """, unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
 
-            # ── Scores catégorie ──
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">📂 Détail par catégorie</div>', unsafe_allow_html=True)
+            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
+            # Résumé par catégorie (compact)
+            st.markdown('<div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Résumé par catégorie</div>', unsafe_allow_html=True)
             for cat, label in CATEGORY_LABELS.items():
-                s = result["cat_scores"].get(cat, 0)
-                matched_kws = result["matched"].get(cat, [])
-                missing_kws = result["missing"].get(cat, [])[:3]
-                c2 = score_color(s)
-
-                with st.expander(f"{label}  —  **{s:.0f}/100**", expanded=(s < 40)):
-                    st.markdown(horizontal_bar(s), unsafe_allow_html=True)
-                    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-
-                    chips_match = "".join(
-                        keyword_chip(kw, result["market_bonus"].get(kw), "match")
-                        for kw in matched_kws
-                    ) if matched_kws else "<span style='color:#94a3b8;font-size:13px'>— Aucun keyword trouvé</span>"
-
-                    chips_miss = "".join(
-                        keyword_chip(kw, market.keyword_frequency.get(cat, {}).get(kw, 0) * 100, "missing")
-                        for kw in missing_kws
-                    ) if missing_kws else "<span style='color:#94a3b8;font-size:13px'>— Rien à ajouter</span>"
-
-                    st.markdown(f"""
-                    <div style='margin-bottom:8px'>
-                      <span style='font-size:12px;font-weight:600;color:#64748b'>PRÉSENT DANS VOTRE CV</span><br>
-                      {chips_match}
-                    </div>
-                    <div>
-                      <span style='font-size:12px;font-weight:600;color:#64748b'>TOP MANQUANTS (par impact marché)</span><br>
-                      {chips_miss}
-                    </div>
-                    """, unsafe_allow_html=True)
+                s = result['cat_scores'].get(cat, 0)
+                w = CATEGORY_WEIGHTS.get(cat, 0) * 100
+                cc = score_color(s)
+                st.markdown(f"""
+                <div style="display:grid;grid-template-columns:160px 1fr 50px 42px;align-items:center;gap:10px;margin-bottom:7px;">
+                  <span style="font-size:12.5px;font-weight:500;color:#334155">{label}</span>
+                  <div class="pbar-outer" style="height:9px;">
+                    <div style="background:linear-gradient(90deg,{cc}99,{cc});height:100%;width:{s:.1f}%;border-radius:99px;"></div>
+                  </div>
+                  <span style="font-size:11px;color:#94a3b8;font-family:'JetBrains Mono',monospace">{w:.0f}% poids</span>
+                  <span style="font-size:13px;font-weight:700;color:{cc};font-family:'JetBrains Mono',monospace;text-align:right">{s:.0f}</span>
+                </div>
+                """, unsafe_allow_html=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # ── Recommandations ──
+            # Détail par catégorie
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">💡 Recommandations</div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">📂 Analyse détaillée par compétence</div>', unsafe_allow_html=True)
 
-            weak = [(c, s) for c, s in result["cat_scores"].items() if s < 40]
-            weak.sort(key=lambda x: x[1])
+            cats_sorted = sorted(list(CATEGORY_LABELS.items()), key=lambda x: result['cat_scores'].get(x[0], 0))
 
-            if weak:
-                for cat, s in weak[:3]:
-                    top_m = result["missing"].get(cat, [])[:3]
-                    cov = market.category_coverage.get(cat, 0) * 100
-                    freq_map = market.keyword_frequency.get(cat, {})
-                    chips = "".join(keyword_chip(k, freq_map.get(k, 0)*100, "missing") for k in top_m)
-                    st.markdown(f"""
-                    <div class="rec-card warn">
-                      <b>⚠️ {CATEGORY_LABELS[cat]}</b> — Score {s:.0f}/100
-                      (mentionné dans {cov:.0f}% des offres)<br>
-                      <div style='margin-top:6px'>Ajoutez : {chips}</div>
-                    </div>""", unsafe_allow_html=True)
+            # Rendu en grille 2 colonnes avec Streamlit (évite le rendu du HTML brut)
+            for i in range(0, len(cats_sorted), 2):
+                row = cats_sorted[i:i+2]
+                cols = st.columns(len(row), gap="small")
+                for col_obj, (cat, label) in zip(cols, row):
+                    s = result['cat_scores'].get(cat, 0)
+                    matched_kws = result['matched'].get(cat, [])
+                    missing_kws = result['missing'].get(cat, [])[:4]
+                    c2 = score_color(s)
+                    badge_cls = 'strong' if s >= 70 else ('weak' if s < 40 else '')
+                    chips_match = ''.join(keyword_chip(kw, result['market_bonus'].get(kw), 'match') for kw in matched_kws) if matched_kws else "<span style='color:#94a3b8;font-size:12px;font-style:italic'>Aucun mot-clé détecté</span>"
+                    chips_miss = ''.join(keyword_chip(kw, market.keyword_frequency.get(cat, {}).get(kw, 0) * 100, 'missing') for kw in missing_kws) if missing_kws else "<span style='color:#94a3b8;font-size:12px;font-style:italic'>Rien à ajouter 🎉</span>"
+                    cov_pct = market.category_coverage.get(cat, 0) * 100
+                    bg_score = f"{c2}18"
 
-            dom_edu = result["dominant_edu"]
-            cv_edu = result["cv_edu"]
-            if cv_edu != dom_edu:
-                pct = market.education_dist.get(dom_edu, 0) * 100
-                st.markdown(f"""
-                <div class="rec-card info">
-                  📚 Le marché cible principalement <b>{dom_edu}</b> ({pct:.0f}% des offres).
-                  Valorisez bien votre parcours <b>{cv_edu}</b> ou votre expérience pratique.
-                </div>""", unsafe_allow_html=True)
+                    with col_obj:
+                        st.markdown(f'<div class="cat-card {badge_cls}">', unsafe_allow_html=True)
+                        st.markdown(f'<div class="cat-header"><div class="cat-label">{label}</div><div class="cat-score-badge" style="background:{bg_score};color:{c2};border-color:{c2}33">{s:.0f}/100</div></div>', unsafe_allow_html=True)
+                        st.markdown(horizontal_bar(s, height=8), unsafe_allow_html=True)
+                        st.markdown(f'<div style="font-size:12px;color:#64748b;margin-bottom:8px">Présent dans <strong style="color:#475569">{cov_pct:.0f}%</strong> des offres</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-size:12px;font-weight:700;color:#475569">Dans votre CV</div><div style="font-size:12px;color:#94a3b8">· {len(matched_kws)} mots-clés</div></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="cat-chips">{chips_match}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="display:flex;gap:8px;align-items:center;margin:10px 0 6px"><div style="font-size:12px;font-weight:700;color:#475569">À ajouter</div><div style="font-size:12px;color:#94a3b8">· suggestions ciblées</div></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="cat-chips">{chips_miss}</div>', unsafe_allow_html=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # Recommandations
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">💡 Plan d\'action recommandé</div>', unsafe_allow_html=True)
+            st.markdown('<div class="rec-list">', unsafe_allow_html=True)
 
             if overall >= 70:
-                st.markdown('<div class="rec-card">✅ Excellent alignement — votre profil est très compétitif sur ce marché.</div>', unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="rec-item success"><div class="rec-icon">✅</div><div class="rec-body"><div class="rec-title">Excellent alignement ATS — {overall:.0f}/100</div><div class="rec-desc">Votre profil est très compétitif sur ce marché. Vous pouvez postuler en confiance.</div></div></div>
+                """, unsafe_allow_html=True)
             elif overall >= 50:
-                st.markdown('<div class="rec-card warn">🟡 Profil correct — quelques ajouts ciblés peuvent significativement booster votre score.</div>', unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="rec-item warning"><div class="rec-icon">🟡</div><div class="rec-body"><div class="rec-title">Profil correct — quelques ajouts ciblés peuvent booster votre score</div><div class="rec-desc">Score actuel : <strong>{overall:.0f}/100</strong>. Travaillez les catégories en orange/rouge ci-dessous.</div></div></div>
+                """, unsafe_allow_html=True)
             else:
-                st.markdown('<div class="rec-card error">🔴 Score insuffisant — concentrez-vous sur les catégories en rouge avant de postuler.</div>', unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="rec-item danger"><div class="rec-icon">🔴</div><div class="rec-body"><div class="rec-title">Score insuffisant — optimisation nécessaire avant de postuler</div><div class="rec-desc">Score actuel : <strong>{overall:.0f}/100</strong>. Concentrez-vous sur les priorités ci-dessous.</div></div></div>
+                """, unsafe_allow_html=True)
 
+            weak = sorted([(cat, s) for cat, s in result['cat_scores'].items() if s < 50], key=lambda x: x[1])[:3]
+            for i, (cat, s) in enumerate(weak, 1):
+                top_m = result['missing'].get(cat, [])[:4]
+                cov = market.category_coverage.get(cat, 0) * 100
+                freq_map = market.keyword_frequency.get(cat, {})
+                chips = ''.join(keyword_chip(k, freq_map.get(k, 0)*100, 'missing') for k in top_m)
+                level = 'danger' if s < 30 else 'warning'
+                icon = '🔴' if s < 30 else '🟠'
+                st.markdown(f"""
+                <div class="rec-item {level}"><div class="rec-icon">{icon}</div><div class="rec-body"><div class="rec-title">Priorité {i} — {CATEGORY_LABELS[cat]} · {s:.0f}/100</div><div class="rec-desc">Catégorie présente dans <strong>{cov:.0f}%</strong> des offres. Ajoutez ces keywords à votre CV :</div><div class="rec-chips" style="margin-top:8px">{chips}</div></div></div>
+                """, unsafe_allow_html=True)
+
+            cv_edu = result['cv_edu']
+            dom_edu = result['dominant_edu']
+            if cv_edu != dom_edu:
+                pct_edu = market.education_dist.get(dom_edu, 0) * 100
+                st.markdown(f"""
+                <div class="rec-item info"><div class="rec-icon">🎓</div><div class="rec-body"><div class="rec-title">Formation : mettez en valeur votre parcours</div><div class="rec-desc">Le marché cible principalement <strong>{dom_edu}</strong> ({pct_edu:.0f}% des offres). Votre niveau détecté : <strong>{cv_edu}</strong>. Valorisez votre expérience pratique et vos projets concrets.</div></div></div>
+                """, unsafe_allow_html=True)
+
+            st.markdown('</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         else:
-            # État vide
-            st.markdown("""
-            <div class="card" style="text-align:center;padding:60px 20px">
-              <div style="font-size:3rem;margin-bottom:16px">📋</div>
-              <div style="font-size:1.1rem;font-weight:600;color:#475569;margin-bottom:8px">
-                Uploadez votre CV pour démarrer
-              </div>
-              <div style="color:#94a3b8;font-size:14px;line-height:1.6">
-                Formats supportés : PDF, DOCX, TXT<br>
-                Ou collez directement le texte de votre CV
-              </div>
+            # État vide — demander l'utilisateur de lancer l'analyse
+            last_ts = st.session_state.get('last_run_ts')
+            last_run_txt = ''
+            if last_ts:
+                import time
+                last_run_txt = f"Dernière analyse: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_ts))}"
+
+            st.markdown(f"""
+            <div class="card" style="text-align:center;padding:72px 24px 80px;">
+                <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:18px;">
+                    <div style="font-size:3.6rem;">📋</div>
+                    <div style="text-align:left">
+                        <div style="font-size:1.25rem;font-weight:700;color:#334155;">Votre analyse ATS vous attend</div>
+                        <div style="font-size:13px;color:#64748b;margin-top:4px">Uploadez votre CV ou collez son contenu, puis cliquez sur <strong style="color:#6366f1">{btn_label}</strong>.</div>
+                    </div>
+                </div>
+                <div style="color:#94a3b8;font-size:13px;line-height:1.6;max-width:420px;margin:0 auto 10px;">{last_run_txt}</div>
+                <div style="display:flex;justify-content:center;gap:28px;margin-top:18px;flex-wrap:wrap;">
+                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#6366f1">7</div><div style="font-size:11px;color:#94a3b8">catégories analysées</div></div>
+                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#6366f1">80+</div><div style="font-size:11px;color:#94a3b8">keywords ATS</div></div>
+                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#6366f1">∞</div><div style="font-size:11px;color:#94a3b8">recommandations</div></div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
-
 
 if __name__ == "__main__":
     render_app()
