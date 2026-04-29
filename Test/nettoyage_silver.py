@@ -7,13 +7,93 @@ DB_FILE = os.path.join(BASE_DIR, "jobs_database.db")
 
 # On enrichit le dictionnaire pour couvrir tout le spectre Data (ATS-friendly)
 ATS_KEYWORDS = {
-    "programmation": ["python", "sql", " r ", "vba", "scala", "java", "c++", "bash"],
-    "visualisation": ["tableau", "power bi", "looker", "metabase", "plotly", "matplotlib", "seaborn", "qlik"],
-    "stack_data": ["spark", "pandas", "numpy", "dbt", "airflow", "dagster", "snowflake", "bigquery", "redshift", "databricks", "hadoop"],
-    "machine_learning": ["scikit-learn", "tensorflow", "pytorch", "keras", "mlflow", "nlp", "computer vision", "xgboost", "regression", "clustering"],
-    "infrastructure": ["aws", "azure", "gcp", "docker", "kubernetes", "git", "ci/cd", "terraform"],
-    "concepts": ["etl", "elt", "data modeling", "data warehousing", "data lake", "data governance", "ab testing", "statistics", "api"],
-    "soft_skills": ["agile", "scrum", "communication", "curiosite", "esprit d'equipe", "vulgarisation", "autonomie", "anglais"]
+
+    # ── COMMUN DS + DE ─────────────────────────────────────────────
+    "programmation": [
+        "python", "sql", "r", "scala", "bash", "java", "julia", "matlab"
+    ],
+    "infrastructure_cloud": [
+        "aws", "gcp", "azure", "docker", "kubernetes", "terraform",
+        "linux", "git", "github actions", "gitlab ci", "ci/cd"
+    ],
+    "bases_de_donnees": [
+        "postgresql", "mysql", "mongodb", "redis", "elasticsearch",
+        "cassandra", "neo4j", "sqlite"
+    ],
+    "soft_skills": [
+        "agile", "scrum", "autonomie", "communication", "vulgarisation",
+        "anglais", "esprit d'equipe", "gestion de projet",
+        "stakeholder management", "curiosite"
+    ],
+
+    # ── DATA ENGINEER ───────────────────────────────────────────────
+    "de_orchestration": [
+        "airflow", "dagster", "prefect", "luigi", "argo workflows"
+    ],
+    "de_ingestion_streaming": [
+        "kafka", "flink", "spark streaming", "kinesis", "pub/sub",
+        "debezium", "nifi", "fivetran", "airbyte", "stitch"
+    ],
+    "de_transformation": [
+        "dbt", "spark", "pandas", "polars", "pyspark", "hadoop",
+        "hive", "presto", "trino"
+    ],
+    "de_stockage": [
+        "snowflake", "bigquery", "redshift", "databricks", "delta lake",
+        "duckdb", "iceberg", "hudi", "data lake", "data lakehouse",
+        "data warehouse"
+    ],
+    "de_concepts": [
+        "etl", "elt", "data modeling", "data pipeline", "batch processing",
+        "stream processing", "medallion architecture", "data mesh",
+        "data fabric", "data catalog", "data lineage", "data quality",
+        "reverse etl", "cdc", "idempotence", "partitioning"
+    ],
+
+    # ── DATA SCIENTIST ───────────────────────────────────────────────
+    "ds_ml_frameworks": [
+        "scikit-learn", "tensorflow", "pytorch", "keras", "xgboost",
+        "lightgbm", "catboost", "statsmodels", "prophet"
+    ],
+    "ds_mlops": [
+        "mlflow", "bentoml", "seldon", "kubeflow", "sagemaker",
+        "vertex ai", "azure ml", "wandb", "dvc", "feature store"
+    ],
+    "ds_techniques": [
+        "regression", "classification", "clustering", "random forest",
+        "gradient boosting", "time series", "anomaly detection",
+        "recommendation system", "a/b testing", "causal inference",
+        "optimisation", "simulation"
+    ],
+    "ds_nlp_vision": [
+        "nlp", "computer vision", "transformers", "bert", "llm",
+        "rag", "langchain", "llamaindex", "stable diffusion",
+        "opencv", "hugging face", "fine-tuning", "embeddings"
+    ],
+    "ds_stats": [
+        "statistiques bayesiennes", "test hypothese", "p-value",
+        "intervalle de confiance", "distribution", "probabilites",
+        "econometrie", "series temporelles"
+    ],
+    "ds_data_analysis": [
+        "pandas", "numpy", "scipy", "polars", "jupyter",
+        "exploratory data analysis", "feature engineering",
+        "data wrangling", "data cleaning"
+    ],
+    "ds_visualisation": [
+        "matplotlib", "seaborn", "plotly", "tableau", "power bi",
+        "looker", "streamlit", "dash", "grafana", "superset"
+    ],
+
+    # ── GOUVERNANCE & ARCHITECTURE (senior / lead) ──────────────────
+    "gouvernance": [
+        "data governance", "data stewardship", "rgpd", "data privacy",
+        "data security", "master data management", "data contract"
+    ],
+    "architecture": [
+        "data architecture", "lambda architecture", "kappa architecture",
+        "microservices", "api rest", "graphql", "event-driven"
+    ],
 }
 
 def extract_ats_tags(text):
@@ -36,18 +116,33 @@ def bronze_to_silver_ats():
     cursor = conn.cursor()
 
     # Mise a jour de la structure Silver
-    cursor.execute('DROP TABLE IF EXISTS job_offers_silver')
+    # cursor.execute('DROP TABLE IF EXISTS job_offers_silver')
+    # cursor.execute('''
+    #     CREATE TABLE job_offers_silver (
+    #         id TEXT PRIMARY KEY,
+    #         entreprise TEXT,
+    #         poste TEXT,
+    #         competences_tech TEXT,  -- Liste a plat pour filtres SQL
+    #         competences_json TEXT,  -- Detail structure pour analyse fine
+    #         niveau_etude TEXT,
+    #         top_keyword TEXT        -- Le mot-cle le plus important trouve
+    #     )
+    # ''')
+    cursor.execute("DROP TABLE IF EXISTS job_offers_silver")
     cursor.execute('''
-        CREATE TABLE job_offers_silver (
-            id TEXT PRIMARY KEY,
-            entreprise TEXT,
-            poste TEXT,
-            competences_tech TEXT,  -- Liste a plat pour filtres SQL
-            competences_json TEXT,  -- Detail structure pour analyse fine
-            niveau_etude TEXT,
-            top_keyword TEXT        -- Le mot-cle le plus important trouve
-        )
-    ''')
+           CREATE TABLE job_offers_silver (
+               id            TEXT PRIMARY KEY,
+               entreprise    TEXT,
+               poste         TEXT,
+               profil        TEXT,
+               competences_tech  TEXT,
+               competences_json  TEXT,
+               top_category  TEXT,
+               top_keyword   TEXT
+           )
+       ''')
+
+
 
     cursor.execute("SELECT * FROM job_offers")
     rows = cursor.fetchall()
