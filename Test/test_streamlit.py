@@ -10,14 +10,17 @@ Usage :
 
 import io
 import json
+import math
 import os
 import re
 import sqlite3
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ── Imports parsing (optionnels, dégradés si absent) ──
 try:
@@ -58,13 +61,13 @@ CATEGORY_WEIGHTS = {
 }
 
 CATEGORY_LABELS = {
-    "programmation":    "💻 Programmation",
-    "visualisation":    "📊 Visualisation",
-    "stack_data":       "⚙️  Stack Data",
-    "machine_learning": "🤖 Machine Learning",
-    "infrastructure":   "☁️  Infrastructure",
-    "concepts":         "🧠 Concepts Data",
-    "soft_skills":      "🤝 Soft Skills",
+    "programmation":    "Programmation",
+    "visualisation":    "Visualisation",
+    "stack_data":       "Stack Data",
+    "machine_learning": "Machine Learning",
+    "infrastructure":   "Infrastructure",
+    "concepts":         "Concepts Data",
+    "soft_skills":      "Soft Skills",
 }
 
 SCORE_COLOR = {
@@ -269,8 +272,6 @@ def score_cv(cv_text: str, market: MarketProfile):
 #  INTERFACE STREAMLIT
 # ══════════════════════════════════════════════════════
 
-import math
-
 def score_color(s: float) -> str:
     if s >= 70: return SCORE_COLOR["excellent"]
     if s >= 50: return SCORE_COLOR["bon"]
@@ -284,10 +285,11 @@ def score_badge(s: float) -> str:
     return "Insuffisant"
 
 def score_badge_icon(s: float) -> str:
-    if s >= 70: return "🟢"
-    if s >= 50: return "🟡"
-    if s >= 30: return "🟠"
-    return "🔴"
+    """Retourne un indicateur coloré HTML (pas d'emoji)."""
+    if s >= 70: return f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{SCORE_COLOR["excellent"]};margin-right:2px;"></span>'
+    if s >= 50: return f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{SCORE_COLOR["bon"]};margin-right:2px;"></span>'
+    if s >= 30: return f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{SCORE_COLOR["moyen"]};margin-right:2px;"></span>'
+    return f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{SCORE_COLOR["faible"]};margin-right:2px;"></span>'
 
 def gauge_svg(score: float, size: int = 240) -> str:
         """SVG gauge demi-cercle raffiné : aiguille contrastée, ombre et indicateurs lisibles."""
@@ -401,16 +403,16 @@ def horizontal_bar(score: float, height: int = 10, show_label: bool = False) -> 
 
 def keyword_chip(kw: str, freq: float | None = None, variant: str = "match") -> str:
     colors = {
-        "match":   ("background:#dcfce7;color:#166534;border:1px solid #86efac;", "✓"),
-        "missing": ("background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;", "✗"),
+        "match":   ("background:#dcfce7;color:#166534;border:1px solid #86efac;", "+"),
+        "missing": ("background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;", "−"),
         "top":     ("background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;", "◆"),
     }
     style, prefix = colors.get(variant, colors["match"])
-    freq_txt = f"&nbsp;<span style='opacity:.55;font-size:10px'>{freq:.0f}%</span>" if freq is not None else ""
+    freq_txt = f"&nbsp;<span style='opacity:.5;font-size:10px'>{freq:.0f}%</span>" if freq is not None else ""
     return (
         f"<span style='display:inline-flex;align-items:center;gap:3px;margin:2px 3px;"
-        f"padding:4px 10px;border-radius:99px;font-size:12px;font-weight:500;{style}'>"
-        f"<span style='font-size:10px'>{prefix}</span>&nbsp;{kw}{freq_txt}</span>"
+        f"padding:3px 10px;border-radius:99px;font-size:12px;font-weight:500;{style}'>"
+        f"<span style='font-size:10px;font-weight:700'>{prefix}</span>&nbsp;{kw}{freq_txt}</span>"
     )
 
 
@@ -418,7 +420,7 @@ def render_app():
     # ── Page config ──
     st.set_page_config(
         page_title="PassTheFilter — ATS CV Scorer",
-        page_icon="🎯",
+        page_icon=None,
         layout="wide",
         initial_sidebar_state="collapsed",
     )
@@ -435,12 +437,23 @@ def render_app():
     .stApp { background: #f0f4f8; }
     footer, #MainMenu { visibility: hidden; }
 
+    /* Masque la barre d'outils Streamlit et ajuste le layout */
+    header[data-testid="stHeader"] { display: none !important; }
+    #MainMenu, footer { visibility: hidden !important; }
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        max-width: 100% !important;
+    }
+
     /* ─── Hero Banner ─── */
     .hero {
         background: linear-gradient(135deg, #0f172a 0%, #1a2942 55%, #162035 100%);
-        border-radius: 22px;
-        padding: 44px 52px;
-        margin-bottom: 28px;
+        border-radius: 16px;
+        padding: 28px 48px;
+        margin-bottom: 22px;
         position: relative;
         overflow: hidden;
         border: 1px solid rgba(255,255,255,.06);
@@ -459,33 +472,13 @@ def render_app():
         background: radial-gradient(circle, rgba(16,185,129,.12) 0%, transparent 65%);
         border-radius: 50%;
     }
-    .hero-badge {
-        display: inline-flex; align-items: center; gap: 6px;
-        background: rgba(99,102,241,.18); color: #a5b4fc;
-        border: 1px solid rgba(99,102,241,.35); border-radius: 99px;
-        padding: 5px 16px; font-size: 12px; font-weight: 600;
-        letter-spacing: .5px; text-transform: uppercase;
-        margin-bottom: 18px;
-    }
     .logo-circle {
-        width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#4f46e5);display:inline-flex;align-items:center;justify-content:center;color:white;font-weight:800;margin-right:12px;box-shadow:0 6px 18px rgba(99,102,241,.18);
+        width:44px;height:44px;border-radius:10px;
+        background:linear-gradient(135deg,#6366f1,#4f46e5);
+        display:inline-flex;align-items:center;justify-content:center;
+        color:white;font-weight:800;font-size:14px;flex-shrink:0;
+        box-shadow:0 4px 14px rgba(99,102,241,.28);
     }
-    .hero-row { display:flex;align-items:center;gap:12px;margin-bottom:12px }
-    .status-badge { font-size:12px;padding:6px 10px;border-radius:999px;background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff;margin-left:8px }
-    .hero h1 {
-        color: #f8fafc; font-size: 2.4rem; font-weight: 800;
-        margin: 0 0 10px; letter-spacing: -.8px; line-height: 1.1;
-    }
-    .hero h1 span { color: #818cf8; }
-    .hero p { color: #94a3b8; font-size: 1rem; margin: 0; line-height: 1.65; max-width: 600px; }
-    .hero-stats {
-        display: flex; gap: 32px; margin-top: 26px;
-    }
-    .hero-stat-item { display: flex; flex-direction: column; }
-    .hero-stat-val { color: #f8fafc; font-size: 1.5rem; font-weight: 700; }
-    .hero-stat-lbl { color: #64748b; font-size: 12px; font-weight: 500; }
-
-    /* ─── Cards ─── */
     .card {
         background: #ffffff;
         border-radius: 18px;
@@ -500,15 +493,24 @@ def render_app():
         margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
     }
     .card-title::after {
-        content: ''; flex: 1; height: 1px; background: #f1f5f9;
+        content: '';
+        flex: 1;
+        height: 0px;
+        border-top: 1.5px dashed #cbd5e1;
+        opacity: 0.6;
     }
 
-    /* ─── Score Global Card ─── */
-    .score-global-wrap {
-        display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+    /* ─── Séparateur en tirets réutilisable ─── */
+    .section-divider {
+        width: 100%;
+        height: 0;
+        border: none;
+        border-top: 1.5px dashed #cbd5e1;
+        opacity: 0.55;
+        margin: 14px 0;
     }
-    .score-gauge-col { flex-shrink: 0; }
-    .score-info-col { flex: 1; min-width: 180px; }
+
+    /* ─── Score ─── */
     .score-number {
         font-size: 3.2rem; font-weight: 800; line-height: 1;
         letter-spacing: -2px; margin-bottom: 6px;
@@ -521,14 +523,8 @@ def render_app():
     }
     .score-meta { font-size: 13.5px; color: #475569; line-height: 1.8; }
     .score-meta strong { color: #1e293b; }
-    .score-divider { width: 1px; height: 60px; background: #e8edf3; flex-shrink: 0; }
 
-    /* ─── Category Grid ─── */
-    .cat-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 16px;
-    }
+    /* ─── Category Cards ─── */
     .cat-card {
         background: #ffffff;
         border: 1px solid rgba(15,23,42,0.06);
@@ -549,7 +545,6 @@ def render_app():
         min-width:56px; text-align:center; border:1px solid rgba(0,0,0,0.04);
         background: rgba(0,0,0,0.02);
     }
-    .cat-bar-wrap { margin-bottom: 10px; }
     .cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
     /* ─── Metrics ─── */
@@ -560,7 +555,6 @@ def render_app():
         background: #f8fafc; border: 1px solid #e2e8f0;
         border-radius: 14px; padding: 16px 18px;
     }
-    .metric-icon { font-size: 18px; margin-bottom: 6px; }
     .metric-label { font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
     .metric-value { font-size: 1.5rem; font-weight: 800; color: #0f172a; line-height: 1.1; margin: 4px 0 2px; }
     .metric-sub { font-size: 11px; color: #94a3b8; }
@@ -577,17 +571,15 @@ def render_app():
     .kw-pct { font-size: 12px; font-weight: 600; color: #64748b; text-align: right; font-family: 'JetBrains Mono', monospace; }
 
     /* ─── Recommendations ─── */
-    .rec-list { display: flex; flex-direction: column; gap: 10px; }
     .rec-item {
         display: flex; gap: 14px; align-items: flex-start;
         border-radius: 14px; padding: 16px 18px;
-        border: 1px solid transparent;
+        border: 1px solid transparent; margin-bottom: 8px;
     }
     .rec-item.success { background: #f0fdf4; border-color: #86efac; }
     .rec-item.warning { background: #fffbeb; border-color: #fcd34d; }
     .rec-item.danger  { background: #fff1f2; border-color: #fda4af; }
     .rec-item.info    { background: #eff6ff; border-color: #93c5fd; }
-    .rec-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
     .rec-body { flex: 1; }
     .rec-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
     .rec-desc  { font-size: 13px; color: #475569; line-height: 1.55; }
@@ -620,7 +612,6 @@ def render_app():
     }
 
     .analyze-primary { width:100%; max-width:360px; margin:0 auto; display:block; }
-    .analyze-primary.reanalyse { background: linear-gradient(90deg,#10b981,#059669) !important; }
 
     /* ─── Radio ─── */
     .stRadio [role="radiogroup"] { gap: 8px !important; }
@@ -642,24 +633,37 @@ def render_app():
     # ══════════════════════════════════════════════════════
     #  HERO BANNER
     # ══════════════════════════════════════════════════════
-    # Hero compact avec logo et tagline plus pro
-    analyze_label = "Réanalyser" if st.session_state.get("analyse_cv") else "Analyser mon CV"
     st.markdown(f"""
-    <div class="hero" style="padding: 18px 28px 16px 28px; min-height:unset;">
-        <div class="hero-row">
-            <div class="logo-circle">PTF</div>
-            <div style="flex:1">
-                <div style="display:flex;align-items:center;gap:10px">
-                    <div style="font-size:20px;font-weight:800;color:#f8fafc">Pass<span style='color:#818cf8'>The</span>Filter</div>
-                </div>
-                <div style="font-size:13px;color:#c7d2fe;margin-top:6px">Évaluez votre CV vs. le marché Data français — recommandations actionnables en quelques secondes.</div>
+    <div class="hero">
+        <div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div class="logo-circle">PTF</div>
+                <div style="font-size:22px;font-weight:800;color:#f8fafc;letter-spacing:-.5px">Pass<span style='color:#818cf8'>The</span>Filter</div>
             </div>
-        </div>
-        <div class="hero-stats" style="gap:14px;margin-top:14px;">
-            <div class="hero-stat-item"><span class="hero-stat-val">{market.total_offers}</span><span class="hero-stat-lbl">Offres</span></div>
-            <div class="hero-stat-item"><span class="hero-stat-val">7</span><span class="hero-stat-lbl">Catégories</span></div>
-            <div class="hero-stat-item"><span class="hero-stat-val">{dom_contract}</span><span class="hero-stat-lbl">Contrat</span></div>
-            <div class="hero-stat-item"><span class="hero-stat-val">{market.top_keywords[0][0].upper() if market.top_keywords else 'PY'}</span><span class="hero-stat-lbl">Top skill</span></div>
+            <div style="font-size:13px;color:#94a3b8;max-width:520px;line-height:1.5;">
+                Évaluez votre CV face au marché Data français — recommandations actionnables, basées sur <strong style="color:#c7d2fe">{market.total_offers}</strong> offres réelles.
+            </div>
+            <div style="display:flex;align-items:center;gap:0;margin-top:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;">
+                <div style="text-align:center;padding:10px 28px;">
+                    <div style="font-size:18px;font-weight:800;color:#f8fafc;line-height:1">{market.total_offers}</div>
+                    <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.7px;margin-top:3px">Offres</div>
+                </div>
+                <div style="width:1px;height:36px;background:rgba(255,255,255,.09);"></div>
+                <div style="text-align:center;padding:10px 28px;">
+                    <div style="font-size:18px;font-weight:800;color:#f8fafc;line-height:1">7</div>
+                    <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.7px;margin-top:3px">Catégories</div>
+                </div>
+                <div style="width:1px;height:36px;background:rgba(255,255,255,.09);"></div>
+                <div style="text-align:center;padding:10px 28px;">
+                    <div style="font-size:18px;font-weight:800;color:#f8fafc;line-height:1">{dom_contract if dom_contract != 'N/A' else '—'}</div>
+                    <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.7px;margin-top:3px">Contrat</div>
+                </div>
+                <div style="width:1px;height:36px;background:rgba(255,255,255,.09);"></div>
+                <div style="text-align:center;padding:10px 28px;">
+                    <div style="font-size:18px;font-weight:800;color:#818cf8;line-height:1">{market.top_keywords[0][0].upper() if market.top_keywords else '—'}</div>
+                    <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.7px;margin-top:3px">Top skill</div>
+                </div>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -667,22 +671,21 @@ def render_app():
     # ══════════════════════════════════════════════════════
     #  LAYOUT PRINCIPAL  ──  gauche / droite
     # ══════════════════════════════════════════════════════
-    col_left, col_right = st.columns([1, 1.7], gap="large")
+    col_left, col_right = st.columns([1, 2.2], gap="large")
 
     # ──────────────────────────────────────────────────────
     #  PANNEAU GAUCHE
     # ──────────────────────────────────────────────────────
     with col_left:
         # ── Uploader CV ──
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title">📄 Votre CV</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">CV</div>', unsafe_allow_html=True)
         upload_mode = st.radio(
-            "Source", ["📎  Fichier (PDF / DOCX / TXT)", "✏️  Texte libre"],
+            "Source", ["Fichier (PDF / DOCX / TXT)", "Texte libre"],
             horizontal=True, label_visibility="collapsed",
         )
         cv_text = ""
         uploaded = None
-        if "📎" in upload_mode:
+        if "Fichier" in upload_mode:
             uploaded = st.file_uploader(
                 "Glissez votre CV ici",
                 type=["pdf", "docx", "doc", "txt", "md"],
@@ -694,8 +697,8 @@ def render_app():
                     cv_text = parse_uploaded_file(uploaded)
                 if cv_text.strip():
                     nb_words = len(cv_text.split())
-                    st.success(f"✓ **{nb_words}** mots extraits depuis **{uploaded.name}**")
-                    with st.expander("🔍 Aperçu du texte extrait"):
+                    st.success(f"**{nb_words}** mots extraits depuis **{uploaded.name}**")
+                    with st.expander("Aperçu du texte extrait"):
                         st.code(cv_text[:2000] + ("…" if len(cv_text) > 2000 else ""), language=None)
                 else:
                     st.warning("Aucun texte extrait. Essayez le mode Texte libre.")
@@ -708,16 +711,14 @@ def render_app():
                 key="cv_text_area",
             )
 
-        # --- Bande bouton Analyser mon CV (Streamlit button placé sous l'uploader) ---
-        btn_label = "Réanalyser" if st.session_state.get("analyse_cv") else "🚀  Analyser mon CV"
+        # --- Bande bouton Analyser mon CV ---
+        btn_label = "Réanalyser" if st.session_state.get("analyse_cv") else "Analyser mon CV"
         analyse_clicked = st.button(btn_label, use_container_width=True, key="analyze_btn")
         if analyse_clicked:
-            # Récupérer le texte source (upload ou textarea)
             source_text = ""
-            if "📎" in upload_mode:
+            if "Fichier" in upload_mode:
                 up = st.session_state.get("cv_uploader")
                 if up is not None:
-                    # quand le fichier est ré-uploade, parse_uploaded_file doit être appelé
                     try:
                         source_text = parse_uploaded_file(up)
                     except Exception:
@@ -730,14 +731,11 @@ def render_app():
                     res = score_cv(source_text, market)
                     st.session_state["result"] = res
                     st.session_state["analyse_cv"] = True
-                    st.session_state["last_run_ts"] = __import__('time').time()
+                    st.session_state["last_run_ts"] = time.time()
             else:
                 st.warning("Aucun texte de CV détecté. Téléversez un fichier ou collez le texte avant d'analyser.")
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # --- Reset de l'état d'analyse si l'utilisateur change l'input ---
-        # Pour les fichiers, on compare le nom du fichier précédent
+        # --- Reset sur changement d'input ---
         if "cv_uploader" in st.session_state:
             up = st.session_state.get("cv_uploader")
             up_name = up.name if up is not None and hasattr(up, 'name') else None
@@ -746,7 +744,6 @@ def render_app():
                 st.session_state.pop("result", None)
                 st.session_state["last_uploaded_name"] = up_name
 
-        # Pour le texte, on compare un snapshot (début du texte)
         if "cv_text_area" in st.session_state:
             text_snap = (st.session_state.get("cv_text_area") or "")[:200]
             if st.session_state.get("last_text_snapshot") != text_snap:
@@ -755,8 +752,8 @@ def render_app():
                 st.session_state["last_text_snapshot"] = text_snap
 
         # ── Métriques marché ──
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title">📈 Profil du marché</div>', unsafe_allow_html=True)
+        st.divider()
+        st.markdown('<div class="card-title">Profil du marché</div>', unsafe_allow_html=True)
 
         dom_edu = max(market.education_dist, key=market.education_dist.get)
         dom_edu_pct = market.education_dist.get(dom_edu, 0) * 100
@@ -765,20 +762,17 @@ def render_app():
         st.markdown(f"""
         <div class="metrics-strip">
           <div class="metric-tile">
-            <div class="metric-icon">📋</div>
-            <div class="metric-label">Offres</div>
+            <div class="metric-label">Offres analysées</div>
             <div class="metric-value">{market.total_offers}</div>
             <div class="metric-sub">WTTJ · Meteojob · HW</div>
           </div>
           <div class="metric-tile">
-            <div class="metric-icon">📝</div>
-            <div class="metric-label">Contrat top</div>
+            <div class="metric-label">Contrat dominant</div>
             <div class="metric-value">{dom_contract}</div>
             <div class="metric-sub">{dom_ct_pct:.0f}% des offres</div>
           </div>
           <div class="metric-tile">
-            <div class="metric-icon">🎓</div>
-            <div class="metric-label">Formation top</div>
+            <div class="metric-label">Formation dominante</div>
             <div class="metric-value">{dom_edu}</div>
             <div class="metric-sub">{dom_edu_pct:.0f}% des offres</div>
           </div>
@@ -786,7 +780,7 @@ def render_app():
         """, unsafe_allow_html=True)
 
         # ── Top 12 keywords ──
-        st.markdown('<div class="card-title" style="margin-top:4px">🔑 Top keywords du marché</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-title" style="margin-top:4px">Top keywords du marché</div>', unsafe_allow_html=True)
         max_freq = market.top_keywords[0][1] if market.top_keywords else 1
         for kw, freq in market.top_keywords[:12]:
             pct = freq * 100
@@ -801,8 +795,6 @@ def render_app():
               </div>
               <span class="kw-pct">{pct:.0f}%</span>
             </div>""", unsafe_allow_html=True)
-
-        st.markdown('</div>', unsafe_allow_html=True)
 
     # ──────────────────────────────────────────────────────
     #  PANNEAU DROIT
@@ -821,35 +813,29 @@ def render_app():
             b_icon = score_badge_icon(overall)
 
             # SCORE GLOBAL
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">🎯 Score Global ATS</div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">Score ATS Global</div>', unsafe_allow_html=True)
 
             g_col1, g_col2 = st.columns([1, 1.3], gap="medium")
             with g_col1:
-                try:
-                    import streamlit.components.v1 as components
-                    svg_html = gauge_svg(overall, 240)
-                    # height computed from SVG internal h variable in gauge_svg
-                    components.html(svg_html, height=int(240 * 0.62))
-                except Exception:
-                    st.markdown(gauge_svg(overall, 240), unsafe_allow_html=True)
+                svg_html = gauge_svg(overall, 240)
+                components.html(svg_html, height=int(240 * 0.62))
             with g_col2:
                 st.markdown(f"""
                 <div style="padding-top:14px;">
                   <div class="score-number" style="color:{c_main}">{overall:.1f}<sub>/100</sub></div>
                   <div class="score-pill" style="background:{c_main}18;color:{c_main};border:1.5px solid {c_main}44;">{b_icon} {badge}</div>
                   <div class="score-meta">
-                    <strong>🎓 Formation détectée :</strong> {result['cv_edu']}<br>
-                    <strong>📊 Marché :</strong> {result['dominant_edu']} dominant<br>
-                    <strong>🎯 Types de contrat :</strong> {', '.join(result['contract_targets']) or 'N/A'}
+                    <strong>Formation détectée :</strong> {result['cv_edu']}<br>
+                    <strong>Marché :</strong> {result['dominant_edu']} dominant<br>
+                    <strong>Types de contrat :</strong> {', '.join(result['contract_targets']) or 'N/A'}
                   </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+            st.markdown('<hr class="section-divider"/>', unsafe_allow_html=True)
 
             # Résumé par catégorie (compact)
-            st.markdown('<div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Résumé par catégorie</div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">Résumé par catégorie</div>', unsafe_allow_html=True)
             for cat, label in CATEGORY_LABELS.items():
                 s = result['cat_scores'].get(cat, 0)
                 w = CATEGORY_WEIGHTS.get(cat, 0) * 100
@@ -865,11 +851,10 @@ def render_app():
                 </div>
                 """, unsafe_allow_html=True)
 
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.divider()
 
             # Détail par catégorie
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">📂 Analyse détaillée par compétence</div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">Analyse détaillée par compétence</div>', unsafe_allow_html=True)
 
             cats_sorted = sorted(list(CATEGORY_LABELS.items()), key=lambda x: result['cat_scores'].get(x[0], 0))
 
@@ -884,38 +869,48 @@ def render_app():
                     c2 = score_color(s)
                     badge_cls = 'strong' if s >= 70 else ('weak' if s < 40 else '')
                     chips_match = ''.join(keyword_chip(kw, result['market_bonus'].get(kw), 'match') for kw in matched_kws) if matched_kws else "<span style='color:#94a3b8;font-size:12px;font-style:italic'>Aucun mot-clé détecté</span>"
-                    chips_miss = ''.join(keyword_chip(kw, market.keyword_frequency.get(cat, {}).get(kw, 0) * 100, 'missing') for kw in missing_kws) if missing_kws else "<span style='color:#94a3b8;font-size:12px;font-style:italic'>Rien à ajouter 🎉</span>"
+                    chips_miss = ''.join(keyword_chip(kw, market.keyword_frequency.get(cat, {}).get(kw, 0) * 100, 'missing') for kw in missing_kws) if missing_kws else "<span style='color:#94a3b8;font-size:12px;font-style:italic'>Aucun ajout nécessaire</span>"
                     cov_pct = market.category_coverage.get(cat, 0) * 100
                     bg_score = f"{c2}18"
 
                     with col_obj:
-                        st.markdown(f'<div class="cat-card {badge_cls}">', unsafe_allow_html=True)
-                        st.markdown(f'<div class="cat-header"><div class="cat-label">{label}</div><div class="cat-score-badge" style="background:{bg_score};color:{c2};border-color:{c2}33">{s:.0f}/100</div></div>', unsafe_allow_html=True)
-                        st.markdown(horizontal_bar(s, height=8), unsafe_allow_html=True)
-                        st.markdown(f'<div style="font-size:12px;color:#64748b;margin-bottom:8px">Présent dans <strong style="color:#475569">{cov_pct:.0f}%</strong> des offres</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-size:12px;font-weight:700;color:#475569">Dans votre CV</div><div style="font-size:12px;color:#94a3b8">· {len(matched_kws)} mots-clés</div></div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="cat-chips">{chips_match}</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div style="display:flex;gap:8px;align-items:center;margin:10px 0 6px"><div style="font-size:12px;font-weight:700;color:#475569">À ajouter</div><div style="font-size:12px;color:#94a3b8">· suggestions ciblées</div></div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="cat-chips">{chips_miss}</div>', unsafe_allow_html=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div class="cat-card {badge_cls}">
+                            <div class="cat-header">
+                                <div class="cat-label">{label}</div>
+                                <div class="cat-score-badge" style="background:{bg_score};color:{c2};border-color:{c2}33">{s:.0f}/100</div>
+                            </div>
+                            {horizontal_bar(s, height=8)}
+                            <div style="font-size:12px;color:#64748b;margin-bottom:8px">Présent dans <strong style="color:#475569">{cov_pct:.0f}%</strong> des offres</div>
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+                                <div style="font-size:12px;font-weight:700;color:#475569">Dans votre CV</div>
+                                <div style="font-size:12px;color:#94a3b8">· {len(matched_kws)} mots-clés</div>
+                            </div>
+                            <div class="cat-chips">{chips_match}</div>
+                            <div style="display:flex;gap:8px;align-items:center;margin:10px 0 6px">
+                                <div style="font-size:12px;font-weight:700;color:#475569">À ajouter</div>
+                                <div style="font-size:12px;color:#94a3b8">· suggestions ciblées</div>
+                            </div>
+                            <div class="cat-chips">{chips_miss}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+            st.divider()
 
             # Recommandations
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">💡 Plan d\'action recommandé</div>', unsafe_allow_html=True)
-            st.markdown('<div class="rec-list">', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">Plan d\'action recommandé</div>', unsafe_allow_html=True)
 
             if overall >= 70:
                 st.markdown(f"""
-                <div class="rec-item success"><div class="rec-icon">✅</div><div class="rec-body"><div class="rec-title">Excellent alignement ATS — {overall:.0f}/100</div><div class="rec-desc">Votre profil est très compétitif sur ce marché. Vous pouvez postuler en confiance.</div></div></div>
+                <div class="rec-item success"><div class="rec-icon-dot" style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0;margin-top:4px"></div><div class="rec-body"><div class="rec-title">Excellent alignement ATS — {overall:.0f}/100</div><div class="rec-desc">Votre profil est très compétitif sur ce marché. Vous pouvez postuler en confiance.</div></div></div>
                 """, unsafe_allow_html=True)
             elif overall >= 50:
                 st.markdown(f"""
-                <div class="rec-item warning"><div class="rec-icon">🟡</div><div class="rec-body"><div class="rec-title">Profil correct — quelques ajouts ciblés peuvent booster votre score</div><div class="rec-desc">Score actuel : <strong>{overall:.0f}/100</strong>. Travaillez les catégories en orange/rouge ci-dessous.</div></div></div>
+                <div class="rec-item warning"><div class="rec-icon-dot" style="width:10px;height:10px;border-radius:50%;background:#f59e0b;flex-shrink:0;margin-top:4px"></div><div class="rec-body"><div class="rec-title">Profil correct — des ajouts ciblés peuvent améliorer votre score</div><div class="rec-desc">Score actuel : <strong>{overall:.0f}/100</strong>. Travaillez les catégories en orange ou rouge ci-dessous.</div></div></div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
-                <div class="rec-item danger"><div class="rec-icon">🔴</div><div class="rec-body"><div class="rec-title">Score insuffisant — optimisation nécessaire avant de postuler</div><div class="rec-desc">Score actuel : <strong>{overall:.0f}/100</strong>. Concentrez-vous sur les priorités ci-dessous.</div></div></div>
+                <div class="rec-item danger"><div class="rec-icon-dot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;flex-shrink:0;margin-top:4px"></div><div class="rec-body"><div class="rec-title">Score insuffisant — optimisation requise avant de postuler</div><div class="rec-desc">Score actuel : <strong>{overall:.0f}/100</strong>. Concentrez-vous sur les priorités ci-dessous.</div></div></div>
                 """, unsafe_allow_html=True)
 
             weak = sorted([(cat, s) for cat, s in result['cat_scores'].items() if s < 50], key=lambda x: x[1])[:3]
@@ -925,9 +920,9 @@ def render_app():
                 freq_map = market.keyword_frequency.get(cat, {})
                 chips = ''.join(keyword_chip(k, freq_map.get(k, 0)*100, 'missing') for k in top_m)
                 level = 'danger' if s < 30 else 'warning'
-                icon = '🔴' if s < 30 else '🟠'
+                dot_color = '#ef4444' if s < 30 else '#f59e0b'
                 st.markdown(f"""
-                <div class="rec-item {level}"><div class="rec-icon">{icon}</div><div class="rec-body"><div class="rec-title">Priorité {i} — {CATEGORY_LABELS[cat]} · {s:.0f}/100</div><div class="rec-desc">Catégorie présente dans <strong>{cov:.0f}%</strong> des offres. Ajoutez ces keywords à votre CV :</div><div class="rec-chips" style="margin-top:8px">{chips}</div></div></div>
+                <div class="rec-item {level}"><div class="rec-icon-dot" style="width:10px;height:10px;border-radius:50%;background:{dot_color};flex-shrink:0;margin-top:4px"></div><div class="rec-body"><div class="rec-title">Priorité {i} — {CATEGORY_LABELS[cat]} · {s:.0f}/100</div><div class="rec-desc">Catégorie présente dans <strong>{cov:.0f}%</strong> des offres. Ajoutez ces mots-clés à votre CV :</div><div class="rec-chips" style="margin-top:8px">{chips}</div></div></div>
                 """, unsafe_allow_html=True)
 
             cv_edu = result['cv_edu']
@@ -935,34 +930,32 @@ def render_app():
             if cv_edu != dom_edu:
                 pct_edu = market.education_dist.get(dom_edu, 0) * 100
                 st.markdown(f"""
-                <div class="rec-item info"><div class="rec-icon">🎓</div><div class="rec-body"><div class="rec-title">Formation : mettez en valeur votre parcours</div><div class="rec-desc">Le marché cible principalement <strong>{dom_edu}</strong> ({pct_edu:.0f}% des offres). Votre niveau détecté : <strong>{cv_edu}</strong>. Valorisez votre expérience pratique et vos projets concrets.</div></div></div>
+                <div class="rec-item info"><div class="rec-icon-dot" style="width:10px;height:10px;border-radius:50%;background:#3b82f6;flex-shrink:0;margin-top:4px"></div><div class="rec-body"><div class="rec-title">Formation : mettez en valeur votre parcours</div><div class="rec-desc">Le marché cible principalement <strong>{dom_edu}</strong> ({pct_edu:.0f}% des offres). Niveau détecté dans votre CV : <strong>{cv_edu}</strong>. Valorisez votre expérience pratique et vos projets concrets.</div></div></div>
                 """, unsafe_allow_html=True)
-
-            st.markdown('</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
 
         else:
             # État vide — demander l'utilisateur de lancer l'analyse
             last_ts = st.session_state.get('last_run_ts')
             last_run_txt = ''
             if last_ts:
-                import time
-                last_run_txt = f"Dernière analyse: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_ts))}"
+                last_run_txt = f"Dernière analyse : {time.strftime('%d/%m/%Y à %H:%M', time.localtime(last_ts))}"
 
             st.markdown(f"""
             <div class="card" style="text-align:center;padding:72px 24px 80px;">
-                <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:18px;">
-                    <div style="font-size:3.6rem;">📋</div>
+                <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:20px;">
+                    <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#4f46e5,#6366f1);display:flex;align-items:center;justify-content:center;">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    </div>
                     <div style="text-align:left">
-                        <div style="font-size:1.25rem;font-weight:700;color:#334155;">Votre analyse ATS vous attend</div>
-                        <div style="font-size:13px;color:#64748b;margin-top:4px">Uploadez votre CV ou collez son contenu, puis cliquez sur <strong style="color:#6366f1">{btn_label}</strong>.</div>
+                        <div style="font-size:1.15rem;font-weight:700;color:#1e293b;">Analyse ATS de votre CV</div>
+                        <div style="font-size:13px;color:#64748b;margin-top:4px">Importez votre CV ou collez son contenu, puis cliquez sur <strong style="color:#4f46e5">{btn_label}</strong>.</div>
                     </div>
                 </div>
-                <div style="color:#94a3b8;font-size:13px;line-height:1.6;max-width:420px;margin:0 auto 10px;">{last_run_txt}</div>
-                <div style="display:flex;justify-content:center;gap:28px;margin-top:18px;flex-wrap:wrap;">
-                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#6366f1">7</div><div style="font-size:11px;color:#94a3b8">catégories analysées</div></div>
-                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#6366f1">80+</div><div style="font-size:11px;color:#94a3b8">keywords ATS</div></div>
-                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#6366f1">∞</div><div style="font-size:11px;color:#94a3b8">recommandations</div></div>
+                <div style="color:#94a3b8;font-size:12px;line-height:1.6;max-width:420px;margin:0 auto 10px;">{last_run_txt}</div>
+                <div style="display:flex;justify-content:center;gap:32px;margin-top:20px;flex-wrap:wrap;">
+                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#4f46e5">7</div><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">catégories</div></div>
+                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#4f46e5">80+</div><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">mots-clés ATS</div></div>
+                    <div style="text-align:center;"><div style="font-size:1.4rem;font-weight:800;color:#4f46e5">{market.total_offers}</div><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">offres de référence</div></div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
